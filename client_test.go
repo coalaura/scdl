@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/bogem/id3v2/v2"
 )
 
 // mockTransport allows us to mock HTTP responses
@@ -347,5 +349,170 @@ http://mock/segment.ts
 	// The file should contain "audio content" plus ID3 metadata appended/prepended.
 	if !bytes.Contains(content, playlistContent) {
 		t.Errorf("file content missing decrypted audio. Got size %d", len(content))
+	}
+}
+
+func TestDownload_Artwork(t *testing.T) {
+	// Setup encryption for mock segment (same as TestDownload)
+	key := []byte("1234567890123456")
+	iv := make([]byte, 16) // zero IV
+	playlistContent := []byte("audio content")
+	padding := aes.BlockSize - (len(playlistContent) % aes.BlockSize)
+	padded := append(playlistContent, bytes.Repeat([]byte{byte(padding)}, padding)...)
+	ciphertext := make([]byte, len(padded))
+	block, _ := aes.NewCipher(key)
+	mode := cipher.NewCBCEncrypter(block, iv)
+	mode.CryptBlocks(ciphertext, padded)
+
+	// M3U8 content
+	m3u8Content := `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:10
+#EXT-X-KEY:METHOD=AES-128,URI="http://mock/key",IV=0x00000000000000000000000000000000
+#EXTINF:10.0,
+http://mock/segment.ts
+#EXT-X-ENDLIST`
+
+	tests := []struct {
+		name              string
+		artworkURL        string
+		expectArtwork     bool
+		mockTransportFunc func(req *http.Request) (*http.Response, error)
+	}{
+		{
+			name:          "Artwork Success",
+			artworkURL:    "http://mock/artwork-large.jpg",
+			expectArtwork: true,
+			mockTransportFunc: func(req *http.Request) (*http.Response, error) {
+				u := req.URL.String()
+				if u == "http://mock/artwork-t500x500.jpg" { // Replaced URL
+					return &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte("fake image data"))),
+					}, nil
+				}
+				if strings.Contains(u, "artwork") {
+					return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("Not Found"))}, nil
+				}
+				// Default handlers
+				if strings.Contains(u, "/stream/hls") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/playlist.m3u8"}`))}, nil
+				}
+				if u == "http://mock/playlist.m3u8" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(m3u8Content))}, nil
+				}
+				if u == "http://mock/key" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(key))}, nil
+				}
+				if u == "http://mock/segment.ts" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(ciphertext))}, nil
+				}
+				return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("Not Found: " + u))}, nil
+			},
+		},
+		{
+			name:          "Artwork Failure Silent",
+			artworkURL:    "http://mock/artwork-large.jpg",
+			expectArtwork: false, // Currently fails silently, so we expect NO artwork
+			mockTransportFunc: func(req *http.Request) (*http.Response, error) {
+				u := req.URL.String()
+				if strings.Contains(u, "artwork") {
+					return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("Not Found"))}, nil
+				}
+				// Default handlers
+				if strings.Contains(u, "/stream/hls") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/playlist.m3u8"}`))}, nil
+				}
+				if u == "http://mock/playlist.m3u8" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(m3u8Content))}, nil
+				}
+				if u == "http://mock/key" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(key))}, nil
+				}
+				if u == "http://mock/segment.ts" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(ciphertext))}, nil
+				}
+				return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("Not Found: " + u))}, nil
+			},
+		},
+		{
+			name:          "Fallback when Replacement Fails",
+			artworkURL:    "http://mock/artwork-large.jpg",
+			expectArtwork: true,
+			mockTransportFunc: func(req *http.Request) (*http.Response, error) {
+				u := req.URL.String()
+				// The replaced URL will be tried first
+				if u == "http://mock/artwork-t500x500.jpg" {
+					return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("Not Found"))}, nil
+				}
+				// The original URL SHOULD be tried as fallback and succeed
+				if u == "http://mock/artwork-large.jpg" {
+					return &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(bytes.NewReader([]byte("fake image data"))),
+					}, nil
+				}
+
+				// Default handlers
+				if strings.Contains(u, "/stream/hls") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/playlist.m3u8"}`))}, nil
+				}
+				if u == "http://mock/playlist.m3u8" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(m3u8Content))}, nil
+				}
+				if u == "http://mock/key" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(key))}, nil
+				}
+				if u == "http://mock/segment.ts" {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(ciphertext))}, nil
+				}
+				return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("Not Found: " + u))}, nil
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &Client{
+				clientID: "test-client",
+				httpClient: &http.Client{
+					Transport: &mockTransport{RoundTripFunc: tc.mockTransportFunc},
+				},
+			}
+
+			track := &Track{
+				ID:                 123,
+				Title:              "MySong",
+				Artist:             "MyArtist",
+				HLSURL:             "https://api-v2.soundcloud.com/media/soundcloud:tracks:123/token/stream/hls",
+				TrackAuthorization: "auth",
+				ArtworkURL:         tc.artworkURL,
+			}
+
+			outDir := t.TempDir()
+			outPath, err := client.Download(context.Background(), track, outDir, nil)
+			if err != nil {
+				t.Fatalf("Download() error = %v", err)
+			}
+
+			// Read tags
+			tag, err := id3v2.Open(outPath, id3v2.Options{Parse: true})
+			if err != nil {
+				t.Fatalf("Error opening tag: %v", err)
+			}
+			defer tag.Close()
+
+			hasPicture := false
+			if frames := tag.GetFrames(tag.CommonID("Attached picture")); len(frames) > 0 {
+				hasPicture = true
+			}
+
+			if tc.expectArtwork && !hasPicture {
+				t.Error("Expected artwork to be attached, but it was not")
+			}
+			if !tc.expectArtwork && hasPicture {
+				t.Error("Expected no artwork, but it was found")
+			}
+		})
 	}
 }

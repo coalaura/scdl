@@ -47,7 +47,7 @@ func (c *Client) Download(ctx context.Context, track *Track, outputDir string, p
 	segments := make([][]byte, count)
 	var keyCache sync.Map
 
-	g, ctx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(ctx)
 	g.SetLimit(maxConcurrentSegments)
 
 	var progressMu sync.Mutex
@@ -58,12 +58,12 @@ func (c *Client) Download(ctx context.Context, track *Track, outputDir string, p
 		globalKey := mpl.Key
 
 		g.Go(func() error {
-			data, err := c.get(ctx, seg.URI)
+			data, err := c.get(groupCtx, seg.URI)
 			if err != nil {
 				return fmt.Errorf("download segment %d: %w", i, err)
 			}
 
-			data, err = c.decryptSegment(ctx, data, seg, globalKey, i, &keyCache)
+			data, err = c.decryptSegment(groupCtx, data, seg, globalKey, i, &keyCache)
 			if err != nil {
 				return fmt.Errorf("decrypt segment %d: %w", i, err)
 			}
@@ -257,6 +257,11 @@ func (c *Client) embedMetadata(ctx context.Context, filePath string, track *Trac
 	if track.ArtworkURL != "" {
 		artworkURL := strings.Replace(track.ArtworkURL, "-large.", "-t500x500.", 1)
 		image, err := c.get(ctx, artworkURL)
+		if (err != nil || len(image) == 0) && artworkURL != track.ArtworkURL {
+			// Fallback to original URL if high-res fails and we changed it
+			image, err = c.get(ctx, track.ArtworkURL)
+		}
+
 		if err == nil && len(image) > 0 {
 			tag.AddAttachedPicture(id3v2.PictureFrame{
 				Encoding:    id3v2.EncodingUTF8,
