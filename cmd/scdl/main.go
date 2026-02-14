@@ -35,6 +35,16 @@ func main() {
 				Usage:   "Output directory",
 				Value:   ".",
 			},
+			&cli.StringFlag{
+				Name:    "author",
+				Aliases: []string{"a"},
+				Usage:   "Override artist/author name",
+			},
+			&cli.StringFlag{
+				Name:    "name",
+				Aliases: []string{"n"},
+				Usage:   "Override track title",
+			},
 		},
 		Action: func(c *cli.Context) error {
 			if c.NArg() < 1 {
@@ -64,6 +74,13 @@ func main() {
 				return fmt.Errorf("get track: %w", err)
 			}
 
+			if author := c.String("author"); author != "" {
+				track.Artist = author
+			}
+			if name := c.String("name"); name != "" {
+				track.Title = name
+			}
+
 			if _, err := client.Download(ctx, track, outputDir, nil); err != nil {
 				return fmt.Errorf("download: %w", err)
 			}
@@ -73,8 +90,34 @@ func main() {
 		},
 	}
 
-	if err := app.Run(os.Args); err != nil {
+	if err := app.Run(reorderArgs(os.Args)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// reorderArgs moves flags and their values before positional arguments so that
+// urfave/cli parses them correctly regardless of where the user places them.
+func reorderArgs(args []string) []string {
+	if len(args) < 2 {
+		return args
+	}
+
+	flags := []string{args[0]}
+	var positional []string
+
+	for i := 1; i < len(args); i++ {
+		if strings.HasPrefix(args[i], "-") {
+			flags = append(flags, args[i])
+			// If the flag doesn't use --flag=value form and has a next arg, treat it as the flag's value.
+			if !strings.Contains(args[i], "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+				flags = append(flags, args[i])
+			}
+		} else {
+			positional = append(positional, args[i])
+		}
+	}
+
+	return append(flags, positional...)
 }
