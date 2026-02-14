@@ -56,7 +56,8 @@ func (c *Client) get(url string) ([]byte, error) {
 		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
 	}
 
-	return io.ReadAll(resp.Body)
+	const maxResponseSize = 50 << 20 // 50 MB
+	return io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
 }
 
 var (
