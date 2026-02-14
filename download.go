@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -34,10 +35,14 @@ func (c *Client) Download(ctx context.Context, track *Track, outputDir string, p
 		return "", fmt.Errorf("parse M3U8: %w", err)
 	}
 
-	count := int(mpl.Count())
-	if count == 0 {
+	segCount := mpl.Count()
+	if segCount == 0 {
 		return "", fmt.Errorf("no segments in playlist")
 	}
+	if segCount > math.MaxInt {
+		return "", fmt.Errorf("playlist too large")
+	}
+	count := int(segCount) //nolint:gosec // bounds checked above
 
 	segments := make([][]byte, count)
 	var keyCache sync.Map
@@ -111,7 +116,7 @@ func (c *Client) parseM3U8(ctx context.Context, m3u8URL string) (*m3u8.MediaPlay
 		return nil, err
 	}
 
-	playlist, listType, err := m3u8.Decode(*bytes.NewBuffer(data), true)
+	playlist, listType, err := m3u8.DecodeFrom(bytes.NewReader(data), true)
 	if err != nil {
 		return nil, err
 	}
@@ -130,12 +135,7 @@ func (c *Client) parseM3U8(ctx context.Context, m3u8URL string) (*m3u8.MediaPlay
 		}
 	}
 
-	count := mpl.Count()
-	const maxInt = int(^uint(0) >> 1)
-	if count > uint(maxInt) {
-		return nil, fmt.Errorf("playlist too large")
-	}
-	for i := 0; i < int(count); i++ {
+	for i := range int(mpl.Count()) { //nolint:gosec // bounds checked in Download
 		seg := mpl.Segments[i]
 		seg.URI, err = resolveURI(base, seg.URI)
 		if err != nil {
@@ -179,7 +179,7 @@ func (c *Client) decryptSegment(ctx context.Context, data []byte, seg *m3u8.Medi
 		}
 	} else {
 		iv = make([]byte, 16)
-		binary.BigEndian.PutUint32(iv[12:], uint32(index))
+		binary.BigEndian.PutUint32(iv[12:], uint32(index)) //nolint:gosec // index bounded by playlist segment count
 	}
 
 	return decryptAES128CBC(data, key, iv)
