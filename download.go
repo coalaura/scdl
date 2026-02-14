@@ -220,6 +220,11 @@ func decryptAES128CBC(data, key, iv []byte) ([]byte, error) {
 	if padding > aes.BlockSize || padding == 0 {
 		return data, nil
 	}
+	for i := range padding {
+		if data[len(data)-1-i] != byte(padding) {
+			return data, nil
+		}
+	}
 	return data[:len(data)-padding], nil
 }
 
