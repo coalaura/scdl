@@ -194,8 +194,8 @@ func (c *Client) fetchKey(keyURL string, cache *sync.Map) ([]byte, error) {
 		return nil, err
 	}
 
-	cache.Store(keyURL, key)
-	return key, nil
+	actual, _ := cache.LoadOrStore(keyURL, key)
+	return actual.([]byte), nil
 }
 
 func decryptAES128CBC(data, key, iv []byte) ([]byte, error) {
