@@ -10,10 +10,13 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+var version = "dev"
+
 func main() {
 	app := &cli.App{
-		Name:  "scdl",
-		Usage: "SoundCloud Downloader",
+		Name:    "scdl",
+		Version: version,
+		Usage:   "SoundCloud Downloader",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "output",
