@@ -4,13 +4,15 @@ A simple command-line & library downloader for SoundCloud tracks written in Go.
 
 ![scdl demo](.github/assets/scdl.gif)
 
-## Installation
+## 📦 Installation
+
+#### Intall with Go:
 
 ```bash
 go install github.com/hellsontime/scdl/cmd/scdl@latest
 ```
 
-Or build from source:
+#### Or build from source:
 
 ```bash
 go build -o scdl cmd/scdl/main.go
@@ -20,7 +22,9 @@ or
 make build-os-arch
 ```
 
-## Usage
+#### Or [download](https://github.com/hellsontime/scdl/releases) latest release build
+
+## ⚙️ Usage
 
 ```bash
 scdl <soundcloud-url> [options]
@@ -32,7 +36,7 @@ scdl <soundcloud-url> [options]
 - `-a, --author`: Override artist/author name.
 - `-n, --name`: Override track title.
 
-## Examples
+## 🕹️ Examples
 
 Download to the current directory:
 
@@ -52,7 +56,7 @@ Download with custom artist and track name:
 scdl https://soundcloud.com/cowboyclicker/stay --author "Custom Artist" --name "Custom Title"
 ```
 
-## Library Usage
+## 🧩 Library Usage
 
 ### Installation
 
