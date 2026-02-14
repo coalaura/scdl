@@ -100,7 +100,7 @@ func TestExtractClientID(t *testing.T) {
 		},
 	}
 
-	id, err := client.extractClientID()
+	id, err := client.extractClientIDFrom("https://soundcloud.com")
 	if err != nil {
 		t.Fatalf("extractClientID() error = %v", err)
 	}

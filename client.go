@@ -64,10 +64,6 @@ var (
 	clientIDRe = regexp.MustCompile(`client_id:"([^"]+)"`)
 )
 
-func (c *Client) extractClientID() (string, error) {
-	return c.extractClientIDFrom("https://soundcloud.com")
-}
-
 func (c *Client) extractClientIDFrom(baseURL string) (string, error) {
 	body, err := c.get(baseURL)
 	if err != nil {
