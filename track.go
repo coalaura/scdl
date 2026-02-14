@@ -1,6 +1,7 @@
 package scdl
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -23,8 +24,8 @@ var hydrationRe = regexp.MustCompile(`window\.__sc_hydration\s*=\s*(\[.+?\]);`)
 
 // GetTrack fetches a SoundCloud track page and extracts metadata from the
 // hydration data embedded in the HTML.
-func (c *Client) GetTrack(trackURL string) (*Track, error) {
-	body, err := c.get(trackURL)
+func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) {
+	body, err := c.get(ctx, trackURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetch track page: %w", err)
 	}

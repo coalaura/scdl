@@ -19,16 +19,16 @@ type Client struct {
 
 // NewClient creates a new SoundCloud client by extracting a client_id
 // from the SoundCloud website.
-func NewClient() (*Client, error) {
-	return newClient("https://soundcloud.com", &http.Client{})
+func NewClient(ctx context.Context) (*Client, error) {
+	return newClient(ctx, "https://soundcloud.com", &http.Client{})
 }
 
-func newClient(baseURL string, httpClient *http.Client) (*Client, error) {
+func newClient(ctx context.Context, baseURL string, httpClient *http.Client) (*Client, error) {
 	c := &Client{
 		httpClient: httpClient,
 	}
 
-	clientID, err := c.extractClientIDFrom(baseURL)
+	clientID, err := c.extractClientIDFrom(ctx, baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("extract client_id: %w", err)
 	}
@@ -37,8 +37,8 @@ func newClient(baseURL string, httpClient *http.Client) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) get(url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(context.Background(), "GET", url, nil)
+func (c *Client) get(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +65,8 @@ var (
 	clientIDRe = regexp.MustCompile(`client_id:"([^"]+)"`)
 )
 
-func (c *Client) extractClientIDFrom(baseURL string) (string, error) {
-	body, err := c.get(baseURL)
+func (c *Client) extractClientIDFrom(ctx context.Context, baseURL string) (string, error) {
+	body, err := c.get(ctx, baseURL)
 	if err != nil {
 		return "", fmt.Errorf("fetch %s: %w", baseURL, err)
 	}
@@ -79,7 +79,7 @@ func (c *Client) extractClientIDFrom(baseURL string) (string, error) {
 	for _, match := range matches {
 		assetURL := string(match[1])
 
-		assetBody, err := c.get(assetURL)
+		assetBody, err := c.get(ctx, assetURL)
 		if err != nil {
 			continue
 		}

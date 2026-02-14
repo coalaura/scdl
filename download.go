@@ -2,6 +2,7 @@ package scdl
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
@@ -22,14 +23,13 @@ const maxConcurrentSegments = 20
 
 // Download fetches the track audio via HLS and saves it as an MP3 with ID3 tags.
 // Returns the output file path.
-// Validating bounds for integer conversion
-func (c *Client) Download(track *Track, outputDir string, progress func(downloaded, total int)) (outPath string, err error) {
-	m3u8URL, err := c.GetStreamURL(track)
+func (c *Client) Download(ctx context.Context, track *Track, outputDir string, progress func(downloaded, total int)) (outPath string, err error) {
+	m3u8URL, err := c.GetStreamURL(ctx, track)
 	if err != nil {
 		return "", err
 	}
 
-	mpl, err := c.parseM3U8(m3u8URL)
+	mpl, err := c.parseM3U8(ctx, m3u8URL)
 	if err != nil {
 		return "", fmt.Errorf("parse M3U8: %w", err)
 	}
@@ -42,7 +42,7 @@ func (c *Client) Download(track *Track, outputDir string, progress func(download
 	segments := make([][]byte, count)
 	var keyCache sync.Map
 
-	g := new(errgroup.Group)
+	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(maxConcurrentSegments)
 
 	var progressMu sync.Mutex
@@ -53,12 +53,12 @@ func (c *Client) Download(track *Track, outputDir string, progress func(download
 		globalKey := mpl.Key
 
 		g.Go(func() error {
-			data, err := c.get(seg.URI)
+			data, err := c.get(ctx, seg.URI)
 			if err != nil {
 				return fmt.Errorf("download segment %d: %w", i, err)
 			}
 
-			data, err = c.decryptSegment(data, seg, globalKey, i, &keyCache)
+			data, err = c.decryptSegment(ctx, data, seg, globalKey, i, &keyCache)
 			if err != nil {
 				return fmt.Errorf("decrypt segment %d: %w", i, err)
 			}
@@ -98,15 +98,15 @@ func (c *Client) Download(track *Track, outputDir string, progress func(download
 		return "", fmt.Errorf("close output file: %w", err)
 	}
 
-	if err := c.embedMetadata(outPath, track); err != nil {
+	if err := c.embedMetadata(ctx, outPath, track); err != nil {
 		return "", fmt.Errorf("embed metadata: %w", err)
 	}
 
 	return outPath, nil
 }
 
-func (c *Client) parseM3U8(m3u8URL string) (*m3u8.MediaPlaylist, error) {
-	data, err := c.get(m3u8URL)
+func (c *Client) parseM3U8(ctx context.Context, m3u8URL string) (*m3u8.MediaPlaylist, error) {
+	data, err := c.get(ctx, m3u8URL)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (c *Client) parseM3U8(m3u8URL string) (*m3u8.MediaPlaylist, error) {
 	return mpl, nil
 }
 
-func (c *Client) decryptSegment(data []byte, seg *m3u8.MediaSegment, globalKey *m3u8.Key, index int, keyCache *sync.Map) ([]byte, error) {
+func (c *Client) decryptSegment(ctx context.Context, data []byte, seg *m3u8.MediaSegment, globalKey *m3u8.Key, index int, keyCache *sync.Map) ([]byte, error) {
 	var keyURL, ivStr string
 	if seg.Key != nil && seg.Key.URI != "" {
 		keyURL = seg.Key.URI
@@ -166,7 +166,7 @@ func (c *Client) decryptSegment(data []byte, seg *m3u8.MediaSegment, globalKey *
 		return data, nil
 	}
 
-	key, err := c.fetchKey(keyURL, keyCache)
+	key, err := c.fetchKey(ctx, keyURL, keyCache)
 	if err != nil {
 		return nil, fmt.Errorf("fetch key: %w", err)
 	}
@@ -185,12 +185,12 @@ func (c *Client) decryptSegment(data []byte, seg *m3u8.MediaSegment, globalKey *
 	return decryptAES128CBC(data, key, iv)
 }
 
-func (c *Client) fetchKey(keyURL string, cache *sync.Map) ([]byte, error) {
+func (c *Client) fetchKey(ctx context.Context, keyURL string, cache *sync.Map) ([]byte, error) {
 	if cached, ok := cache.Load(keyURL); ok {
 		return cached.([]byte), nil
 	}
 
-	key, err := c.get(keyURL)
+	key, err := c.get(ctx, keyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -228,16 +228,13 @@ func decryptAES128CBC(data, key, iv []byte) ([]byte, error) {
 	return data[:len(data)-padding], nil
 }
 
-func (c *Client) embedMetadata(filePath string, track *Track) (err error) {
+func (c *Client) embedMetadata(ctx context.Context, filePath string, track *Track) (err error) {
 	tag, err := id3v2.Open(filePath, id3v2.Options{Parse: true})
 	if err != nil {
 		return fmt.Errorf("open for tagging: %w", err)
 	}
 	defer func() {
 		if closeErr := tag.Close(); closeErr != nil {
-			// If we are already returning an error, just log this one or ignore.
-			// But here we can't really log.
-			// Ideally we return it if err is nil.
 			if err == nil {
 				err = fmt.Errorf("close tag: %w", closeErr)
 			}
@@ -259,7 +256,7 @@ func (c *Client) embedMetadata(filePath string, track *Track) (err error) {
 
 	if track.ArtworkURL != "" {
 		artworkURL := strings.Replace(track.ArtworkURL, "-large.", "-t500x500.", 1)
-		image, err := c.get(artworkURL)
+		image, err := c.get(ctx, artworkURL)
 		if err == nil && len(image) > 0 {
 			tag.AddAttachedPicture(id3v2.PictureFrame{
 				Encoding:    id3v2.EncodingUTF8,

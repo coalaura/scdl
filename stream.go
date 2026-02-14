@@ -1,13 +1,14 @@
 package scdl
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 )
 
 // GetStreamURL resolves the M3U8 playlist URL for a track.
-func (c *Client) GetStreamURL(track *Track) (string, error) {
+func (c *Client) GetStreamURL(ctx context.Context, track *Track) (string, error) {
 	trackID, streamToken, err := parseHLSURL(track.HLSURL)
 	if err != nil {
 		return "", err
@@ -18,7 +19,7 @@ func (c *Client) GetStreamURL(track *Track) (string, error) {
 		trackID, streamToken, c.clientID, track.TrackAuthorization,
 	)
 
-	body, err := c.get(apiURL)
+	body, err := c.get(ctx, apiURL)
 	if err != nil {
 		return "", fmt.Errorf("fetch stream URL: %w", err)
 	}

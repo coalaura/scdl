@@ -2,6 +2,7 @@ package scdl
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"fmt"
@@ -181,7 +182,7 @@ func TestDownload_Progress(t *testing.T) {
 	}
 
 	track := &Track{ID: 1, Title: "S", Artist: "A", HLSURL: "http://api/soundcloud:tracks:1/stream/hls"}
-	_, err := client.Download(track, t.TempDir(), progress)
+	_, err := client.Download(context.Background(), track, t.TempDir(), progress)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +225,7 @@ func TestDownload_EmbedMetadata(t *testing.T) {
 		HLSURL:      "http://api/media/soundcloud:tracks:1/token/stream/hls",
 	}
 
-	_, err := client.Download(track, t.TempDir(), nil)
+	_, err := client.Download(context.Background(), track, t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,21 +252,21 @@ func TestParseM3U8_Errors(t *testing.T) {
 	}
 
 	t.Run("FetchFail", func(t *testing.T) {
-		_, err := client.parseM3U8("http://fail")
+		_, err := client.parseM3U8(context.Background(), "http://fail")
 		if err == nil {
 			t.Error("expected error")
 		}
 	})
 
 	t.Run("DecodeFail", func(t *testing.T) {
-		_, err := client.parseM3U8("http://not-m3u8")
+		_, err := client.parseM3U8(context.Background(), "http://not-m3u8")
 		if err == nil {
 			t.Error("expected error")
 		}
 	})
 
 	t.Run("WrongType", func(t *testing.T) {
-		_, err := client.parseM3U8("http://wrong-type")
+		_, err := client.parseM3U8(context.Background(), "http://wrong-type")
 		if err == nil || !strings.Contains(err.Error(), "unsupported playlist type") {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -293,7 +294,7 @@ func TestDownload_Errors(t *testing.T) {
 
 	t.Run("GetStreamURLFail", func(t *testing.T) {
 		track := &Track{HLSURL: "invalid"}
-		_, err := client.Download(track, t.TempDir(), nil)
+		_, err := client.Download(context.Background(), track, t.TempDir(), nil)
 		if err == nil {
 			t.Error("expected error")
 		}
@@ -308,7 +309,7 @@ func TestDownload_Errors(t *testing.T) {
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXT-X-ENDLIST"))}, nil
 			},
 		}
-		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/empty/stream/hls"}, t.TempDir(), nil)
+		_, err := client.Download(context.Background(), &Track{HLSURL: "http://api/soundcloud:tracks:1/empty/stream/hls"}, t.TempDir(), nil)
 		if err == nil || !strings.Contains(err.Error(), "no segments") {
 			t.Errorf("expected empty playlist error, got %v", err)
 		}
@@ -326,7 +327,7 @@ func TestDownload_Errors(t *testing.T) {
 				return nil, fmt.Errorf("seg fail")
 			},
 		}
-		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/seg-fail/stream/hls"}, t.TempDir(), nil)
+		_, err := client.Download(context.Background(), &Track{HLSURL: "http://api/soundcloud:tracks:1/seg-fail/stream/hls"}, t.TempDir(), nil)
 		if err == nil {
 			t.Error("expected error")
 		}
@@ -341,7 +342,7 @@ func TestDownload_Errors(t *testing.T) {
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("not-m3u8"))}, nil
 			},
 		}
-		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/bad-mpl/stream/hls"}, t.TempDir(), nil)
+		_, err := client.Download(context.Background(), &Track{HLSURL: "http://api/soundcloud:tracks:1/bad-mpl/stream/hls"}, t.TempDir(), nil)
 		if err == nil {
 			t.Error("expected error")
 		}
@@ -360,7 +361,7 @@ func TestDownload_Errors(t *testing.T) {
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("data"))}, nil
 			},
 		}
-		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/decrypt-fail/stream/hls"}, t.TempDir(), nil)
+		_, err := client.Download(context.Background(), &Track{HLSURL: "http://api/soundcloud:tracks:1/decrypt-fail/stream/hls"}, t.TempDir(), nil)
 		if err == nil {
 			t.Error("expected error")
 		}
@@ -378,7 +379,7 @@ func TestDownload_Errors(t *testing.T) {
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("keydata012345678"))}, nil
 			},
 		}
-		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/global-key/stream/hls"}, t.TempDir(), nil)
+		_, err := client.Download(context.Background(), &Track{HLSURL: "http://api/soundcloud:tracks:1/global-key/stream/hls"}, t.TempDir(), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -399,7 +400,7 @@ func TestFetchKey_Cache(t *testing.T) {
 	}
 
 	var cache sync.Map
-	k1, err := client.fetchKey("http://key", &cache)
+	k1, err := client.fetchKey(context.Background(), "http://key", &cache)
 	if err != nil || string(k1) != "keydata" {
 		t.Fatal(err)
 	}
@@ -407,7 +408,7 @@ func TestFetchKey_Cache(t *testing.T) {
 		t.Errorf("expected 1 call, got %d", callCount)
 	}
 
-	k2, err := client.fetchKey("http://key", &cache)
+	k2, err := client.fetchKey(context.Background(), "http://key", &cache)
 	if err != nil || string(k2) != "keydata" {
 		t.Fatal(err)
 	}
@@ -457,7 +458,7 @@ func TestDownload_FileErrors(t *testing.T) {
 	track := &Track{ID: 1, Title: "S", Artist: "A", HLSURL: "http://api/soundcloud:tracks:1/file-err/stream/hls"}
 
 	t.Run("CreateFail", func(t *testing.T) {
-		_, err := client.Download(track, "/non-existent-path/hopefully", nil)
+		_, err := client.Download(context.Background(), track, "/non-existent-path/hopefully", nil)
 		if err == nil {
 			t.Error("expected error for invalid path")
 		}
@@ -489,7 +490,7 @@ func TestFetchKey_Fail(t *testing.T) {
 			},
 		},
 	}
-	_, err := client.fetchKey("http://fail", &sync.Map{})
+	_, err := client.fetchKey(context.Background(), "http://fail", &sync.Map{})
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -521,7 +522,7 @@ func TestDownload_ArtworkFetchFail(t *testing.T) {
 		},
 	}
 	track := &Track{ID: 1, Title: "S", Artist: "A", ArtworkURL: "http://mock/artwork-large.jpg", HLSURL: "http://api/soundcloud:tracks:1/artwork-fail/stream/hls"}
-	_, err := client.Download(track, t.TempDir(), nil)
+	_, err := client.Download(context.Background(), track, t.TempDir(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +538,7 @@ func TestParseM3U8_ResolveErrors(t *testing.T) {
 			},
 		},
 	}
-	_, err := client.parseM3U8("http://mock")
+	_, err := client.parseM3U8(context.Background(), "http://mock")
 	if err == nil {
 		t.Error("expected error for invalid key URI")
 	}
@@ -547,7 +548,7 @@ func TestParseM3U8_ResolveErrors(t *testing.T) {
 			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXTINF:1,\n:invalid-seg\n#EXT-X-ENDLIST"))}, nil
 		},
 	}
-	_, err = client.parseM3U8("http://mock")
+	_, err = client.parseM3U8(context.Background(), "http://mock")
 	if err == nil {
 		t.Error("expected error for invalid segment URI")
 	}
@@ -557,7 +558,7 @@ func TestParseM3U8_ResolveErrors(t *testing.T) {
 			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXTINF:1,\nseg1.ts\n#EXT-X-KEY:METHOD=AES-128,URI=\":invalid\"\n#EXTINF:1,\nseg2.ts\n#EXT-X-ENDLIST"))}, nil
 		},
 	}
-	_, err = client.parseM3U8("http://mock")
+	_, err = client.parseM3U8(context.Background(), "http://mock")
 	if err == nil {
 		t.Error("expected error for invalid segment key URI")
 	}
@@ -565,7 +566,7 @@ func TestParseM3U8_ResolveErrors(t *testing.T) {
 
 func TestEmbedMetadata_Fail(t *testing.T) {
 	client := &Client{}
-	err := client.embedMetadata(t.TempDir(), &Track{}) // Passing a directory instead of a file
+	err := client.embedMetadata(context.Background(), t.TempDir(), &Track{}) // Passing a directory instead of a file
 	if err == nil {
 		t.Error("expected error when embedding metadata on a directory")
 	}

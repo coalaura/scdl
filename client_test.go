@@ -2,6 +2,7 @@ package scdl
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"fmt"
@@ -60,7 +61,7 @@ func TestGetStreamURL(t *testing.T) {
 		HLSURL:             "https://api-v2.soundcloud.com/media/soundcloud:tracks:123456/ab-cd-ef/stream/hls",
 	}
 
-	url, err := client.GetStreamURL(track)
+	url, err := client.GetStreamURL(context.Background(), track)
 	if err != nil {
 		t.Fatalf("GetStreamURL() error = %v", err)
 	}
@@ -100,7 +101,7 @@ func TestExtractClientID(t *testing.T) {
 		},
 	}
 
-	id, err := client.extractClientIDFrom("https://soundcloud.com")
+	id, err := client.extractClientIDFrom(context.Background(), "https://soundcloud.com")
 	if err != nil {
 		t.Fatalf("extractClientID() error = %v", err)
 	}
@@ -132,7 +133,7 @@ func TestNewClient(t *testing.T) {
 	}
 
 	httpClient := &http.Client{Transport: transport}
-	client, err := newClient("https://mock.com", httpClient)
+	client, err := newClient(context.Background(), "https://mock.com", httpClient)
 	if err != nil {
 		t.Fatalf("newClient() error = %v", err)
 	}
@@ -145,7 +146,7 @@ func TestNewClient(t *testing.T) {
 func TestNewClient_Direct(t *testing.T) {
 	// We just want coverage for the wrapper function.
 	// It's expected to fail in most environments without network.
-	_, _ = NewClient()
+	_, _ = NewClient(context.Background())
 }
 
 func TestNewClient_Fail(t *testing.T) {
@@ -155,7 +156,7 @@ func TestNewClient_Fail(t *testing.T) {
 		},
 	}
 	httpClient := &http.Client{Transport: transport}
-	_, err := newClient("http://mock", httpClient)
+	_, err := newClient(context.Background(), "http://mock", httpClient)
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -172,7 +173,7 @@ func TestGetError(t *testing.T) {
 		},
 	}
 
-	_, err := client.get("http://fail")
+	_, err := client.get(context.Background(), "http://fail")
 	if err == nil {
 		t.Error("expected error for network failure")
 	}
@@ -186,13 +187,13 @@ func TestGetError(t *testing.T) {
 		},
 	}
 
-	_, err = client.get("http://500")
+	_, err = client.get(context.Background(), "http://500")
 	if err == nil {
 		t.Error("expected error for HTTP 500")
 	}
 
 	t.Run("NewRequestError", func(t *testing.T) {
-		_, err := client.get(":")
+		_, err := client.get(context.Background(), ":")
 		if err == nil {
 			t.Error("expected error")
 		}
@@ -210,7 +211,7 @@ func TestExtractClientIDErrors(t *testing.T) {
 				},
 			},
 		}
-		_, err := client.extractClientIDFrom("http://mock")
+		_, err := client.extractClientIDFrom(context.Background(), "http://mock")
 		if err == nil {
 			t.Error("expected error")
 		}
@@ -229,7 +230,7 @@ func TestExtractClientIDErrors(t *testing.T) {
 				},
 			},
 		}
-		_, err := client.extractClientIDFrom("http://mock")
+		_, err := client.extractClientIDFrom(context.Background(), "http://mock")
 		if err == nil || !strings.Contains(err.Error(), "no asset URLs found") {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -252,7 +253,7 @@ func TestExtractClientIDErrors(t *testing.T) {
 				},
 			},
 		}
-		_, err := client.extractClientIDFrom("http://mock")
+		_, err := client.extractClientIDFrom(context.Background(), "http://mock")
 		if err == nil || !strings.Contains(err.Error(), "not found in any asset bundle") {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -326,7 +327,7 @@ http://mock/segment.ts
 	}
 
 	outDir := t.TempDir()
-	outPath, err := client.Download(track, outDir, nil)
+	outPath, err := client.Download(context.Background(), track, outDir, nil)
 	if err != nil {
 		t.Fatalf("Download() error = %v", err)
 	}

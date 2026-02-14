@@ -1,6 +1,7 @@
 package scdl
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,7 +43,7 @@ func TestGetTrack(t *testing.T) {
 		},
 	}
 
-	track, err := client.GetTrack("https://soundcloud.com/artist/song")
+	track, err := client.GetTrack(context.Background(), "https://soundcloud.com/artist/song")
 	if err != nil {
 		t.Fatalf("GetTrack() error = %v", err)
 	}
@@ -88,21 +89,21 @@ func TestGetTrack_Errors(t *testing.T) {
 	}
 
 	t.Run("FetchFail", func(t *testing.T) {
-		_, err := client.GetTrack("http://fail")
+		_, err := client.GetTrack(context.Background(), "http://fail")
 		if err == nil {
 			t.Error("expected error")
 		}
 	})
 
 	t.Run("NoHydration", func(t *testing.T) {
-		_, err := client.GetTrack("http://no-hydration")
+		_, err := client.GetTrack(context.Background(), "http://no-hydration")
 		if err == nil || !strings.Contains(err.Error(), "hydration data not found") {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("BadJSON", func(t *testing.T) {
-		_, err := client.GetTrack("http://bad-json")
+		_, err := client.GetTrack(context.Background(), "http://bad-json")
 		if err == nil {
 			t.Error("expected error")
 		}
@@ -118,21 +119,21 @@ func TestGetTrack_Errors(t *testing.T) {
 				},
 			},
 		}
-		_, err := localClient.GetTrack("http://bad-data-json")
+		_, err := localClient.GetTrack(context.Background(), "http://bad-data-json")
 		if err == nil {
 			t.Error("expected error")
 		}
 	})
 
 	t.Run("NoSound", func(t *testing.T) {
-		_, err := client.GetTrack("http://no-sound")
+		_, err := client.GetTrack(context.Background(), "http://no-sound")
 		if err == nil || !strings.Contains(err.Error(), "no sound entry found") {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("NoHLS", func(t *testing.T) {
-		_, err := client.GetTrack("http://no-hls")
+		_, err := client.GetTrack(context.Background(), "http://no-hls")
 		if err == nil || !strings.Contains(err.Error(), "no HLS audio/mpeg transcoding found") {
 			t.Errorf("unexpected error: %v", err)
 		}

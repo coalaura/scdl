@@ -56,17 +56,19 @@ func main() {
 				return fmt.Errorf("create output directory: %w", err)
 			}
 
-			client, err := scdl.NewClient()
+			ctx := c.Context
+
+			client, err := scdl.NewClient(ctx)
 			if err != nil {
 				return fmt.Errorf("create client: %w", err)
 			}
 
-			track, err := client.GetTrack(trackURL)
+			track, err := client.GetTrack(ctx, trackURL)
 			if err != nil {
 				return fmt.Errorf("get track: %w", err)
 			}
 
-			if _, err := client.Download(track, outputDir, nil); err != nil {
+			if _, err := client.Download(ctx, track, outputDir, nil); err != nil {
 				return fmt.Errorf("download: %w", err)
 			}
 

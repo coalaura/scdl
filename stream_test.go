@@ -1,6 +1,7 @@
 package scdl
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,28 +89,28 @@ func TestGetStreamURL_Errors(t *testing.T) {
 	}
 
 	t.Run("ParseFail", func(t *testing.T) {
-		_, err := client.GetStreamURL(&Track{HLSURL: "invalid"})
+		_, err := client.GetStreamURL(context.Background(), &Track{HLSURL: "invalid"})
 		if err == nil {
 			t.Error("expected error")
 		}
 	})
 
 	t.Run("FetchFail", func(t *testing.T) {
-		_, err := client.GetStreamURL(&Track{HLSURL: "http://api/soundcloud:tracks:123/fail/stream/hls"})
+		_, err := client.GetStreamURL(context.Background(), &Track{HLSURL: "http://api/soundcloud:tracks:123/fail/stream/hls"})
 		if err == nil {
 			t.Error("expected error")
 		}
 	})
 
 	t.Run("EmptyURL", func(t *testing.T) {
-		_, err := client.GetStreamURL(&Track{HLSURL: "http://api/soundcloud:tracks:123/empty/stream/hls"})
+		_, err := client.GetStreamURL(context.Background(), &Track{HLSURL: "http://api/soundcloud:tracks:123/empty/stream/hls"})
 		if err == nil || !strings.Contains(err.Error(), "empty stream URL") {
 			t.Errorf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("BadJSON", func(t *testing.T) {
-		_, err := client.GetStreamURL(&Track{HLSURL: "http://api/soundcloud:tracks:123/badjson/stream/hls"})
+		_, err := client.GetStreamURL(context.Background(), &Track{HLSURL: "http://api/soundcloud:tracks:123/badjson/stream/hls"})
 		if err == nil {
 			t.Error("expected error")
 		}
