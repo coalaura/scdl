@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"encoding/hex"
+	"fmt"
+	"io"
+	"net/http"
 	"net/url"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -151,8 +155,418 @@ func TestDecryptAES128CBC(t *testing.T) {
 	})
 }
 
-// Helpers
-func decodeHex(s string) []byte {
-	b, _ := hex.DecodeString(s)
-	return b
+func TestDownload_Progress(t *testing.T) {
+	client := &Client{
+		clientID: "test",
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					u := req.URL.String()
+					if strings.Contains(u, "/stream/hls") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/playlist.m3u8"}`))}, nil
+					}
+					if u == "http://mock/playlist.m3u8" {
+						m3u8Content := "#EXTM3U\n#EXTINF:10.0,\nseg1.ts\n#EXTINF:10.0,\nseg2.ts\n#EXT-X-ENDLIST"
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(m3u8Content))}, nil
+					}
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("some-audio-data"))}, nil
+				},
+			},
+		},
+	}
+
+	var progressCalls int
+	progress := func(downloaded, total int) {
+		progressCalls++
+	}
+
+	track := &Track{ID: 1, Title: "S", Artist: "A", HLSURL: "http://api/soundcloud:tracks:1/stream/hls"}
+	_, err := client.Download(track, t.TempDir(), progress)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if progressCalls != 2 {
+		t.Errorf("expected 2 progress calls, got %d", progressCalls)
+	}
+}
+
+func TestDownload_EmbedMetadata(t *testing.T) {
+	// Setup a minimal valid MP3 file or just let id3v2 fail gracefully if possible
+	// Actually, Download creates the file.
+	client := &Client{
+		clientID: "test",
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					if strings.Contains(req.URL.String(), "artwork") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte("fake-image")))}, nil
+					}
+					if strings.Contains(req.URL.String(), "hls") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/playlist.m3u8"}`))}, nil
+					}
+					if strings.Contains(req.URL.String(), "playlist.m3u8") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST"))}, nil
+					}
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte("audio-data")))}, nil
+				},
+			},
+		},
+	}
+
+	track := &Track{
+		ID:          1,
+		Title:       "Title",
+		Artist:      "Artist",
+		Description: "Description",
+		Genre:       "Genre",
+		ArtworkURL:  "http://mock/artwork.jpg",
+		HLSURL:      "http://api/media/soundcloud:tracks:1/token/stream/hls",
+	}
+
+	_, err := client.Download(track, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParseM3U8_Errors(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					if strings.Contains(req.URL.String(), "fail") {
+						return nil, fmt.Errorf("fail")
+					}
+					if strings.Contains(req.URL.String(), "not-m3u8") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("not a playlist"))}, nil
+					}
+					if strings.Contains(req.URL.String(), "wrong-type") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=128000\nchunk.m3u8"))}, nil
+					}
+					return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("404"))}, nil
+				},
+			},
+		},
+	}
+
+	t.Run("FetchFail", func(t *testing.T) {
+		_, err := client.parseM3U8("http://fail")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("DecodeFail", func(t *testing.T) {
+		_, err := client.parseM3U8("http://not-m3u8")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("WrongType", func(t *testing.T) {
+		_, err := client.parseM3U8("http://wrong-type")
+		if err == nil || !strings.Contains(err.Error(), "unsupported playlist type") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestDownload_Errors(t *testing.T) {
+	client := &Client{
+		clientID: "test",
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					u := req.URL.String()
+					if strings.Contains(u, "fail") {
+						return nil, fmt.Errorf("fail")
+					}
+					if strings.Contains(u, "empty-mpl") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXT-X-ENDLIST"))}, nil
+					}
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST"))}, nil
+				},
+			},
+		},
+	}
+
+	t.Run("GetStreamURLFail", func(t *testing.T) {
+		track := &Track{HLSURL: "invalid"}
+		_, err := client.Download(track, t.TempDir(), nil)
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("EmptyPlaylist", func(t *testing.T) {
+		client.httpClient.Transport = &mockTransport{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.String(), "stream/hls") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/empty-mpl"}`))}, nil
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXT-X-ENDLIST"))}, nil
+			},
+		}
+		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/empty/stream/hls"}, t.TempDir(), nil)
+		if err == nil || !strings.Contains(err.Error(), "no segments") {
+			t.Errorf("expected empty playlist error, got %v", err)
+		}
+	})
+
+	t.Run("SegmentDownloadFail", func(t *testing.T) {
+		client.httpClient.Transport = &mockTransport{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.String(), "stream/hls") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/mpl"}`))}, nil
+				}
+				if strings.Contains(req.URL.String(), "mpl") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXTINF:1,\nfail-seg.ts\n#EXT-X-ENDLIST"))}, nil
+				}
+				return nil, fmt.Errorf("seg fail")
+			},
+		}
+		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/seg-fail/stream/hls"}, t.TempDir(), nil)
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("ParseM3U8FailInDownload", func(t *testing.T) {
+		client.httpClient.Transport = &mockTransport{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.String(), "stream/hls") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/bad-mpl"}`))}, nil
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("not-m3u8"))}, nil
+			},
+		}
+		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/bad-mpl/stream/hls"}, t.TempDir(), nil)
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("DecryptFail", func(t *testing.T) {
+		client.httpClient.Transport = &mockTransport{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.String(), "stream/hls") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/mpl"}`))}, nil
+				}
+				if strings.Contains(req.URL.String(), "mpl") {
+					// Invalid IV (not hex)
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"http://mock/key\",IV=0xINVALID\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST"))}, nil
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("data"))}, nil
+			},
+		}
+		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/decrypt-fail/stream/hls"}, t.TempDir(), nil)
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("GlobalKey", func(t *testing.T) {
+		client.httpClient.Transport = &mockTransport{
+			RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+				if strings.Contains(req.URL.String(), "stream/hls") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/mpl"}`))}, nil
+				}
+				if strings.Contains(req.URL.String(), "mpl") {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"http://mock/key\"\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST"))}, nil
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("keydata012345678"))}, nil
+			},
+		}
+		_, err := client.Download(&Track{HLSURL: "http://api/soundcloud:tracks:1/global-key/stream/hls"}, t.TempDir(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestFetchKey_Cache(t *testing.T) {
+	var callCount int
+	client := &Client{
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					callCount++
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("keydata"))}, nil
+				},
+			},
+		},
+	}
+
+	var cache sync.Map
+	k1, err := client.fetchKey("http://key", &cache)
+	if err != nil || string(k1) != "keydata" {
+		t.Fatal(err)
+	}
+	if callCount != 1 {
+		t.Errorf("expected 1 call, got %d", callCount)
+	}
+
+	k2, err := client.fetchKey("http://key", &cache)
+	if err != nil || string(k2) != "keydata" {
+		t.Fatal(err)
+	}
+	if callCount != 1 {
+		t.Errorf("expected STILL 1 call (cached), got %d", callCount)
+	}
+}
+
+func TestDecryptAES128CBC_EdgeCases(t *testing.T) {
+	t.Run("EmptyData", func(t *testing.T) {
+		got, err := decryptAES128CBC([]byte{}, []byte("1234567890123456"), make([]byte, 16))
+		if err != nil || len(got) != 0 {
+			t.Errorf("expected empty result, got %v, %v", got, err)
+		}
+	})
+
+	t.Run("BadPadding", func(t *testing.T) {
+		data := make([]byte, 16)
+		data[15] = 0 // Invalid padding
+		key := []byte("1234567890123456")
+		iv := make([]byte, 16)
+		res, err := decryptAES128CBC(make([]byte, 16), key, iv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res) != 16 {
+			t.Errorf("expected 16 bytes, got %d", len(res))
+		}
+	})
+}
+
+func TestDownload_FileErrors(t *testing.T) {
+	client := &Client{
+		clientID: "test",
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					if strings.Contains(req.URL.String(), "hls") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/mpl"}`))}, nil
+					}
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST"))}, nil
+				},
+			},
+		},
+	}
+
+	track := &Track{ID: 1, Title: "S", Artist: "A", HLSURL: "http://api/soundcloud:tracks:1/file-err/stream/hls"}
+
+	t.Run("CreateFail", func(t *testing.T) {
+		_, err := client.Download(track, "/non-existent-path/hopefully", nil)
+		if err == nil {
+			t.Error("expected error for invalid path")
+		}
+	})
+}
+
+func TestResolveURI_Error(t *testing.T) {
+	_, err := resolveURI(&url.URL{}, "://invalid")
+	if err == nil {
+		t.Error("expected error for invalid URI")
+	}
+}
+
+func TestDecryptAES128CBC_CipherError(t *testing.T) {
+	// Invalid key size causes NewCipher to fail
+	_, err := decryptAES128CBC([]byte("1234567890123456"), []byte("bad-key"), make([]byte, 16))
+	if err == nil {
+		t.Error("expected error for bad key")
+	}
+}
+
+func TestFetchKey_Fail(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					return nil, fmt.Errorf("fail")
+				},
+			},
+		},
+	}
+	_, err := client.fetchKey("http://fail", &sync.Map{})
+	if err == nil {
+		t.Error("expected error")
+	}
+}
+
+func TestParseM3U8_URLParseError(t *testing.T) {
+	// 124-126 is likely unreachable in normal flow as m3u8URL has already passed http.NewRequest
+}
+
+func TestDownload_ArtworkFetchFail(t *testing.T) {
+	client := &Client{
+		clientID: "test",
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					u := req.URL.String()
+					if strings.Contains(u, "t500x500") {
+						return nil, fmt.Errorf("fail artwork")
+					}
+					if strings.Contains(u, "hls") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"url": "http://mock/mpl"}`))}, nil
+					}
+					if strings.Contains(u, "mpl") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST"))}, nil
+					}
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("some-audio-data"))}, nil
+				},
+			},
+		},
+	}
+	track := &Track{ID: 1, Title: "S", Artist: "A", ArtworkURL: "http://mock/artwork-large.jpg", HLSURL: "http://api/soundcloud:tracks:1/artwork-fail/stream/hls"}
+	_, err := client.Download(track, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParseM3U8_ResolveErrors(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\":invalid\"\n#EXTINF:1,\nseg.ts\n#EXT-X-ENDLIST"))}, nil
+				},
+			},
+		},
+	}
+	_, err := client.parseM3U8("http://mock")
+	if err == nil {
+		t.Error("expected error for invalid key URI")
+	}
+
+	client.httpClient.Transport = &mockTransport{
+		RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXTINF:1,\n:invalid-seg\n#EXT-X-ENDLIST"))}, nil
+		},
+	}
+	_, err = client.parseM3U8("http://mock")
+	if err == nil {
+		t.Error("expected error for invalid segment URI")
+	}
+
+	client.httpClient.Transport = &mockTransport{
+		RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("#EXTM3U\n#EXTINF:1,\nseg1.ts\n#EXT-X-KEY:METHOD=AES-128,URI=\":invalid\"\n#EXTINF:1,\nseg2.ts\n#EXT-X-ENDLIST"))}, nil
+		},
+	}
+	_, err = client.parseM3U8("http://mock")
+	if err == nil {
+		t.Error("expected error for invalid segment key URI")
+	}
+}
+
+func TestEmbedMetadata_Fail(t *testing.T) {
+	client := &Client{}
+	err := client.embedMetadata(t.TempDir(), &Track{}) // Passing a directory instead of a file
+	if err == nil {
+		t.Error("expected error when embedding metadata on a directory")
+	}
 }

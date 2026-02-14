@@ -1,6 +1,7 @@
 package scdl
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -58,4 +59,82 @@ func TestGetTrack(t *testing.T) {
 	if track.HLSURL != "https://api-v2.soundcloud.com/media/soundcloud:tracks:123456/stream/hls" {
 		t.Errorf("got HLSURL %q, want %q", track.HLSURL, "https://api-v2.soundcloud.com/media/soundcloud:tracks:123456/stream/hls")
 	}
+}
+func TestGetTrack_Errors(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					u := req.URL.String()
+					if strings.Contains(u, "fail") {
+						return nil, fmt.Errorf("fail")
+					}
+					if strings.Contains(u, "no-hydration") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`no data`))}, nil
+					}
+					if strings.Contains(u, "bad-json") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`window.__sc_hydration = [invalid];`))}, nil
+					}
+					if strings.Contains(u, "no-sound") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`window.__sc_hydration = [{"hydratable":"user","data":{}}];`))}, nil
+					}
+					if strings.Contains(u, "no-hls") {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`window.__sc_hydration = [{"hydratable":"sound","data":{"id":1,"media":{"transcodings":[]}}}];`))}, nil
+					}
+					return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("404"))}, nil
+				},
+			},
+		},
+	}
+
+	t.Run("FetchFail", func(t *testing.T) {
+		_, err := client.GetTrack("http://fail")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("NoHydration", func(t *testing.T) {
+		_, err := client.GetTrack("http://no-hydration")
+		if err == nil || !strings.Contains(err.Error(), "hydration data not found") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("BadJSON", func(t *testing.T) {
+		_, err := client.GetTrack("http://bad-json")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("BadDataJSON", func(t *testing.T) {
+		localClient := &Client{
+			httpClient: &http.Client{
+				Transport: &mockTransport{
+					RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+						return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`window.__sc_hydration = [{"hydratable":"sound","data":{"id":"not-an-int"}}];`))}, nil
+					},
+				},
+			},
+		}
+		_, err := localClient.GetTrack("http://bad-data-json")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("NoSound", func(t *testing.T) {
+		_, err := client.GetTrack("http://no-sound")
+		if err == nil || !strings.Contains(err.Error(), "no sound entry found") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("NoHLS", func(t *testing.T) {
+		_, err := client.GetTrack("http://no-hls")
+		if err == nil || !strings.Contains(err.Error(), "no HLS audio/mpeg transcoding found") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
 }

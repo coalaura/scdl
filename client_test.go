@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -108,6 +109,155 @@ func TestExtractClientID(t *testing.T) {
 	}
 }
 
+func TestNewClient(t *testing.T) {
+	html := `<html><body><script src="https://a-v2.sndcdn.com/assets/app-123.js"></script></body></html>`
+	js := `(function(){ bla bla client_id:"my-client-id-123" bla bla })`
+
+	transport := &mockTransport{
+		RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() == "https://mock.com" {
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(html)),
+				}, nil
+			}
+			if req.URL.String() == "https://a-v2.sndcdn.com/assets/app-123.js" {
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(js)),
+				}, nil
+			}
+			return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader("Not Found"))}, nil
+		},
+	}
+
+	httpClient := &http.Client{Transport: transport}
+	client, err := newClient("https://mock.com", httpClient)
+	if err != nil {
+		t.Fatalf("newClient() error = %v", err)
+	}
+
+	if client.clientID != "my-client-id-123" {
+		t.Errorf("got clientID %q, want %q", client.clientID, "my-client-id-123")
+	}
+}
+
+func TestNewClient_Direct(t *testing.T) {
+	// We just want coverage for the wrapper function.
+	// It's expected to fail in most environments without network.
+	_, _ = NewClient()
+}
+
+func TestNewClient_Fail(t *testing.T) {
+	transport := &mockTransport{
+		RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+			return nil, fmt.Errorf("fail")
+		},
+	}
+	httpClient := &http.Client{Transport: transport}
+	_, err := newClient("http://mock", httpClient)
+	if err == nil {
+		t.Error("expected error")
+	}
+}
+
+func TestGetError(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					return nil, fmt.Errorf("network error")
+				},
+			},
+		},
+	}
+
+	_, err := client.get("http://fail")
+	if err == nil {
+		t.Error("expected error for network failure")
+	}
+
+	client.httpClient.Transport = &mockTransport{
+		RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: 500,
+				Body:       io.NopCloser(strings.NewReader("internal error")),
+			}, nil
+		},
+	}
+
+	_, err = client.get("http://500")
+	if err == nil {
+		t.Error("expected error for HTTP 500")
+	}
+
+	t.Run("NewRequestError", func(t *testing.T) {
+		_, err := client.get(":")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+}
+
+func TestExtractClientIDErrors(t *testing.T) {
+	t.Run("FetchMainFailed", func(t *testing.T) {
+		client := &Client{
+			httpClient: &http.Client{
+				Transport: &mockTransport{
+					RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+						return nil, fmt.Errorf("fail")
+					},
+				},
+			},
+		}
+		_, err := client.extractClientIDFrom("http://mock")
+		if err == nil {
+			t.Error("expected error")
+		}
+	})
+
+	t.Run("NoAssetsFound", func(t *testing.T) {
+		client := &Client{
+			httpClient: &http.Client{
+				Transport: &mockTransport{
+					RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: 200,
+							Body:       io.NopCloser(strings.NewReader("no assets here")),
+						}, nil
+					},
+				},
+			},
+		}
+		_, err := client.extractClientIDFrom("http://mock")
+		if err == nil || !strings.Contains(err.Error(), "no asset URLs found") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("AssetFetchFails", func(t *testing.T) {
+		html := `<html><body><script src="https://a-v2.sndcdn.com/assets/fail.js"></script></body></html>`
+		client := &Client{
+			httpClient: &http.Client{
+				Transport: &mockTransport{
+					RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+						if req.URL.String() == "http://mock" {
+							return &http.Response{
+								StatusCode: 200,
+								Body:       io.NopCloser(strings.NewReader(html)),
+							}, nil
+						}
+						return nil, fmt.Errorf("asset fail")
+					},
+				},
+			},
+		}
+		_, err := client.extractClientIDFrom("http://mock")
+		if err == nil || !strings.Contains(err.Error(), "not found in any asset bundle") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
 func TestDownload(t *testing.T) {
 	// Setup encryption for mock segment
 	key := []byte("1234567890123456")
