@@ -1,3 +1,5 @@
+GOBIN ?= $$(go env GOPATH)/bin
+
 APP_NAME := scdl
 BUILD_DIR := bin
 VERSION := $(shell git describe --tags 2>/dev/null || echo "dev")
@@ -57,3 +59,13 @@ release: clean
 	@$(MAKE) build-os-arch OS=windows ARCH=amd64
 	@$(MAKE) build-os-arch OS=windows ARCH=arm64
 	@echo "Release builds created in ${BUILD_DIR}/"
+
+
+.PHONY: install-go-test-coverage
+install-go-test-coverage:
+	go install github.com/vladopajic/go-test-coverage/v2@latest
+
+.PHONY: check-coverage
+check-coverage: install-go-test-coverage
+	go test ./... -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+	${GOBIN}/go-test-coverage --config=./.testcoverage.yml
