@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/grafov/m3u8"
 )
 
 func TestSanitizeFilename(t *testing.T) {
@@ -584,5 +586,42 @@ func TestEmbedMetadata_Fail(t *testing.T) {
 	err := client.embedMetadata(context.Background(), t.TempDir(), &Track{}) // Passing a directory instead of a file
 	if err == nil {
 		t.Error("expected error when embedding metadata on a directory")
+	}
+}
+
+func TestDecryptSegment_GlobalKey(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("keydata012345678"))}, nil
+				},
+			},
+		},
+	}
+	seg := &m3u8.MediaSegment{}
+	globalKey := &m3u8.Key{URI: "http://key", IV: "0x00000000000000000000000000000000"}
+	var cache sync.Map
+	data := make([]byte, 16)
+	_, err := client.decryptSegment(context.Background(), data, seg, globalKey, 0, &cache)
+	if err != nil {
+		t.Errorf("decryptSegment failed: %v", err)
+	}
+}
+
+func TestDecryptSegment_FetchKeyFail(t *testing.T) {
+	client := &Client{
+		httpClient: &http.Client{
+			Transport: &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					return nil, fmt.Errorf("fetch fail")
+				},
+			},
+		},
+	}
+	seg := &m3u8.MediaSegment{Key: &m3u8.Key{URI: "http://key"}}
+	_, err := client.decryptSegment(context.Background(), nil, seg, nil, 0, &sync.Map{})
+	if err == nil {
+		t.Error("expected error")
 	}
 }
