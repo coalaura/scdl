@@ -20,11 +20,15 @@ type Client struct {
 // NewClient creates a new SoundCloud client by extracting a client_id
 // from the SoundCloud website.
 func NewClient() (*Client, error) {
+	return newClient("https://soundcloud.com", &http.Client{})
+}
+
+func newClient(baseURL string, httpClient *http.Client) (*Client, error) {
 	c := &Client{
-		httpClient: &http.Client{},
+		httpClient: httpClient,
 	}
 
-	clientID, err := c.extractClientID()
+	clientID, err := c.extractClientIDFrom(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("extract client_id: %w", err)
 	}
@@ -61,9 +65,13 @@ var (
 )
 
 func (c *Client) extractClientID() (string, error) {
-	body, err := c.get("https://soundcloud.com")
+	return c.extractClientIDFrom("https://soundcloud.com")
+}
+
+func (c *Client) extractClientIDFrom(baseURL string) (string, error) {
+	body, err := c.get(baseURL)
 	if err != nil {
-		return "", fmt.Errorf("fetch soundcloud.com: %w", err)
+		return "", fmt.Errorf("fetch %s: %w", baseURL, err)
 	}
 
 	matches := assetRe.FindAllSubmatch(body, -1)

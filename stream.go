@@ -47,7 +47,7 @@ func parseHLSURL(hlsURL string) (trackID, streamToken string, err error) {
 
 	// Find the part containing "soundcloud:tracks:"
 	for i, part := range parts {
-		if strings.HasPrefix(part, "soundcloud:tracks:") {
+		if strings.HasPrefix(part, "soundcloud:tracks") {
 			idParts := strings.Split(part, ":")
 			if len(idParts) < 3 {
 				return "", "", fmt.Errorf("invalid track ID format in URL")

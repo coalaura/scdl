@@ -33,14 +33,7 @@ func (c *Client) Download(track *Track, outputDir string, progress func(download
 		return "", fmt.Errorf("parse M3U8: %w", err)
 	}
 
-	countUint := mpl.Count()
-	// Check for integer overflow before converting uint to int
-	// Max int value on this architecture
-	const maxInt = int(^uint(0) >> 1)
-	if countUint > uint(maxInt) {
-		return "", fmt.Errorf("playlist too large to handle")
-	}
-	count := int(countUint)
+	count := int(mpl.Count())
 	if count == 0 {
 		return "", fmt.Errorf("no segments in playlist")
 	}
@@ -127,10 +120,7 @@ func (c *Client) parseM3U8(m3u8URL string) (*m3u8.MediaPlaylist, error) {
 	}
 
 	mpl := playlist.(*m3u8.MediaPlaylist)
-	base, err := url.Parse(m3u8URL)
-	if err != nil {
-		return nil, err
-	}
+	base, _ := url.Parse(m3u8URL)
 
 	if mpl.Key != nil && mpl.Key.URI != "" {
 		mpl.Key.URI, err = resolveURI(base, mpl.Key.URI)
