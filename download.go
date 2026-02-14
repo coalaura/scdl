@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"net/url"
@@ -178,7 +179,7 @@ func (c *Client) decryptSegment(data []byte, seg *m3u8.MediaSegment, globalKey *
 		}
 	} else {
 		iv = make([]byte, 16)
-		iv[15] = byte(index)
+		binary.BigEndian.PutUint32(iv[12:], uint32(index))
 	}
 
 	return decryptAES128CBC(data, key, iv)
