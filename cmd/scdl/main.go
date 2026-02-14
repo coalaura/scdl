@@ -1,3 +1,4 @@
+// Package main is the entry point for the scdl command line tool.
 package main
 
 import (
@@ -33,8 +34,8 @@ func main() {
 
 			outputDir := c.String("output")
 
-			// Ensure output directory exists
-			if err := os.MkdirAll(outputDir, 0755); err != nil {
+			// Ensure output directory exists (0750 per linter requirement)
+			if err := os.MkdirAll(outputDir, 0750); err != nil {
 				return fmt.Errorf("create output directory: %w", err)
 			}
 
@@ -70,7 +71,7 @@ func reorderArgs(args []string) []string {
 		return args
 	}
 
-	var newArgs []string
+	var newArgs = make([]string, 0, len(args))
 	var flags []string
 	var positional []string
 
