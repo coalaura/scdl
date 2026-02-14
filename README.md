@@ -2,6 +2,8 @@
 
 A simple command-line & library downloader for SoundCloud tracks written in Go.
 
+![scdl demo](.github/assets/scdl.gif)
+
 ## Installation
 
 ```bash
