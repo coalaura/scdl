@@ -1,0 +1,48 @@
+version: "2"
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: false
+
+linters:
+  enable:
+    # Bugs & Errors
+    - errorlint
+    - nilerr
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    - bodyclose
+    
+    # Complexity & Performance
+    - gocyclo
+    - prealloc
+    - makezero
+    
+    # Style & Formatting
+    - misspell
+    - whitespace
+    - tagalign
+    - goconst
+    - unconvert
+    - unparam
+    - nakedret
+    - revive
+    
+    # Security
+    - gosec
+    
+    # Testing
+    - testifylint
+
+    # Opinionated / Advanced
+    - gocritic
+
+#  exclusions:
+#    rules:
+#      - path: internal/
+#        text: "avoid meaningless package names"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
