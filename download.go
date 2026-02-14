@@ -287,5 +287,11 @@ func sanitizeFilename(name string) string {
 		"/", "_", "\\", "_", ":", "_", "*", "_",
 		"?", "_", "\"", "_", "<", "_", ">", "_", "|", "_",
 	)
-	return replacer.Replace(name)
+	name = replacer.Replace(name)
+	name = strings.ReplaceAll(name, "\x00", "")
+	name = strings.TrimLeft(name, ".")
+	if name == "" {
+		name = "untitled"
+	}
+	return name
 }

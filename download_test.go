@@ -40,6 +40,21 @@ func TestSanitizeFilename(t *testing.T) {
 			input: "foo\\bar|baz*qux",
 			want:  "foo_bar_baz_qux",
 		},
+		{
+			name:  "Filename with null bytes",
+			input: "Artist\x00 - Song",
+			want:  "Artist - Song",
+		},
+		{
+			name:  "Filename with leading dots",
+			input: "...hidden",
+			want:  "hidden",
+		},
+		{
+			name:  "Empty filename",
+			input: "",
+			want:  "untitled",
+		},
 	}
 
 	for _, tt := range tests {
