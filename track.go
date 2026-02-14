@@ -1,4 +1,4 @@
-package soundcloud
+package scdl
 
 import (
 	"encoding/json"

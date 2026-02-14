@@ -1,5 +1,5 @@
-// Package soundcloud provides a client for interacting with SoundCloud's internal API.
-package soundcloud
+// Package scdl provides a client for interacting with SoundCloud's internal API.
+package scdl
 
 import (
 	"context"
