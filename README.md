@@ -1,6 +1,6 @@
 # scdl
 
-A simple command-line SoundCloud downloader written in Go.
+A simple command-line & library downloader for SoundCloud tracks written in Go.
 
 ## Installation
 
@@ -12,6 +12,10 @@ Or build from source:
 
 ```bash
 go build -o scdl cmd/scdl/main.go
+```
+or 
+```bash
+make build-os-arch
 ```
 
 ## Usage
