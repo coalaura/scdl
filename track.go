@@ -20,7 +20,7 @@ type Track struct {
 	HLSURL             string // HLS transcoding URL for audio/mpeg
 }
 
-var hydrationRe = regexp.MustCompile(`window\.__sc_hydration\s*=\s*(\[.+?\]);`)
+var hydrationRe = regexp.MustCompile(`window\.__sc_hydration\s*=\s*(\[.+?]);`)
 
 // GetTrack fetches a SoundCloud track page and extracts metadata from the
 // hydration data embedded in the HTML.
