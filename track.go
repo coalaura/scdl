@@ -27,6 +27,19 @@ type Track struct {
 
 var hydrationRe = regexp.MustCompile(`window\.__sc_hydration\s*=\s*(\[.+?]);`)
 
+// nullableTime is a time.Time that safely handles null or empty string JSON values.
+type nullableTime struct {
+	time.Time
+}
+
+func (t *nullableTime) UnmarshalJSON(data []byte) error {
+	s := string(data)
+	if s == "null" || s == `""` {
+		return nil
+	}
+	return json.Unmarshal(data, &t.Time)
+}
+
 // GetTrack fetches a SoundCloud track page and extracts metadata from the
 // hydration data embedded in the HTML.
 func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) {
@@ -56,8 +69,8 @@ func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) 
 		var data struct {
 			ID                 int       `json:"id"`
 			Title              string    `json:"title"`
-			CreatedAt          time.Time `json:"created_at"`
-			ReleaseDate        time.Time `json:"release_date"`
+			CreatedAt          nullableTime `json:"created_at"`
+			ReleaseDate        nullableTime `json:"release_date"`
 			Description        string    `json:"description"`
 			Genre              string    `json:"genre"`
 			Duration           int       `json:"duration"`
