@@ -138,10 +138,15 @@ func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) 
 
 // cleanupTrackTitle removes the artist name from the title (e.g. "CapoBlanco - Love In The Rain")
 func cleanupTrackTitle(title, artist string) string {
-	if strings.HasPrefix(title, artist) {
-		rgx := regexp.MustCompile(regexp.QuoteMeta(artist) + "\\s*-\\s*")
+	if artist == "" || !strings.HasPrefix(title, artist) {
+		return title
+	}
 
-		return rgx.ReplaceAllString(title, "")
+	// Remove artist prefix and any surrounding whitespace/hyphen
+	res := strings.TrimPrefix(title, artist)
+	res = strings.TrimSpace(res)
+	if strings.HasPrefix(res, "-") {
+		return strings.TrimSpace(res[1:])
 	}
 
 	return title
