@@ -95,7 +95,7 @@ func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) 
 		if data.PublisherMetadata.ReleaseTitle != "" {
 			title = data.PublisherMetadata.ReleaseTitle
 		} else {
-			title = cleanupTrackTitle(title, artist)
+			title = cleanupTrackTitle(title, data.PublisherMetadata.AlbumTitle, artist)
 		}
 
 		var year string
@@ -136,18 +136,51 @@ func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) 
 	return nil, fmt.Errorf("no sound entry found in hydration data")
 }
 
-// cleanupTrackTitle removes the artist name from the title (e.g. "CapoBlanco - Love In The Rain")
-func cleanupTrackTitle(title, artist string) string {
-	if artist == "" || !strings.HasPrefix(title, artist) {
+// cleanupTrackTitle cleanly removes the artist and album name from the title (e.g. "CapoBlanco - Album - Love In The Rain")
+func cleanupTrackTitle(title, artist, album string) string {
+	if artist == "" && album == "" {
 		return title
 	}
 
-	// Remove artist prefix and any surrounding whitespace/hyphen
-	res := strings.TrimPrefix(title, artist)
-	res = strings.TrimSpace(res)
-	if strings.HasPrefix(res, "-") {
-		return strings.TrimSpace(res[1:])
+	var (
+		start    int
+		segments []string
+	)
+
+	for i := range len(title) + 1 {
+		if i == len(title) || title[i] == '-' {
+			trimmed := strings.TrimSpace(title[start:i])
+			if trimmed != "" && !matchesAnyFold(trimmed, artist, album) {
+				segments = append(segments, trimmed)
+			}
+
+			start = i + 1
+		}
 	}
 
-	return title
+	if len(segments) == 0 {
+		return ""
+	}
+
+	return strings.Join(segments, " - ")
+}
+
+func matchesAnyFold(str, s1, s2 string) bool {
+	if s1 != "" && hasPrefixFold(str, s1) {
+		return true
+	}
+
+	if s2 != "" && hasPrefixFold(str, s2) {
+		return true
+	}
+
+	return false
+}
+
+func hasPrefixFold(str, prefix string) bool {
+	if len(prefix) > len(str) {
+		return false
+	}
+
+	return strings.EqualFold(str[:len(prefix)], prefix)
 }

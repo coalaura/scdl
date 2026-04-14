@@ -139,3 +139,14 @@ func TestGetTrack_Errors(t *testing.T) {
 		}
 	})
 }
+
+func TestCleanupTitle(t *testing.T) {
+	title := "Steve & Joe - Some Title - Some Album"
+	album := "Some Album"
+	artist := "Steve"
+
+	cleaned := cleanupTrackTitle(title, album, artist)
+	if cleaned != "Some Title" {
+		t.Errorf("got Title %q, want %q", cleaned, "Some Title")
+	}
+}
