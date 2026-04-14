@@ -140,13 +140,121 @@ func TestGetTrack_Errors(t *testing.T) {
 	})
 }
 
-func TestCleanupTitle(t *testing.T) {
-	title := "Steve & Joe - Some-Title - Some Album"
-	album := "Some Album"
-	artist := "Steve"
+func TestCleanupTrackTitle(t *testing.T) {
+	tests := []struct {
+		name     string
+		title    string
+		artist   string
+		album    string
+		expected string
+	}{
+		{
+			name:     "No Changes Needed",
+			title:    "My Awesome Song",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+		{
+			name:     "Empty Artist And Album",
+			title:    "My Awesome Song - Joe",
+			artist:   "",
+			album:    "",
+			expected: "My Awesome Song - Joe",
+		},
+		{
+			name:     "Exact Match Artist",
+			title:    "Joe - My Awesome Song",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+		{
+			name:     "Exact Match Album",
+			title:    "My Awesome Song - The Album",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+		{
+			name:     "Artist And Album Removed",
+			title:    "Joe - My Awesome Song - The Album",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+		{
+			name:     "Case Insensitive Match",
+			title:    "my awesome song - JOE",
+			artist:   "joe",
+			album:    "the album",
+			expected: "my awesome song",
+		},
+		{
+			name:     "Ampersand List Match First",
+			title:    "Joe & Steve - My Awesome Song",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+		{
+			name:     "Ampersand List Match Second",
+			title:    "Steve & Joe - My Awesome Song",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+		{
+			name:     "Comma List Match",
+			title:    "My Awesome Song - Steve, Joe",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+		{
+			name:     "And List Match",
+			title:    "Steve and Joe - My Awesome Song",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+		{
+			name:     "Similar Album Substring Not Removed",
+			title:    "My Awesome Song - The Album Deluxe",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song - The Album Deluxe",
+		},
+		{
+			name:     "Multiple Empty Separators",
+			title:    "Joe - - My Awesome Song",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+		{
+			name:     "Hyphenated Title Preserved",
+			title:    "Joe - Part-One - The Album",
+			artist:   "Joe",
+			album:    "The Album",
+			expected: "Part-One",
+		},
+		{
+			name:     "Artist Contains Ampersand",
+			title:    "Joe & Steve - My Awesome Song",
+			artist:   "Joe & Steve",
+			album:    "The Album",
+			expected: "My Awesome Song",
+		},
+	}
 
-	cleaned := cleanupTrackTitle(title, album, artist)
-	if cleaned != "Some-Title" {
-		t.Errorf("got Title %q, want %q", cleaned, "Some-Title")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cleanupTrackTitle(tt.title, tt.artist, tt.album)
+			if got != tt.expected {
+				t.Errorf("cleanupTrackTitle(%q, %q, %q) = %q; want %q",
+					tt.title, tt.artist, tt.album, got, tt.expected)
+			}
+		})
 	}
 }

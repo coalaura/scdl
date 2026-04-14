@@ -166,12 +166,8 @@ func cleanupTrackTitle(title, artist, album string) string {
 		}
 	}
 
-	if !removed {
+	if len(segments) == 0 || !removed {
 		return title
-	}
-
-	if len(segments) == 0 {
-		return ""
 	}
 
 	return strings.Join(segments, " - ")
@@ -185,22 +181,51 @@ func isTrackTitleSeparator(title string, i int) bool {
 	return (i > 0 && title[i-1] == ' ') || (i+1 < len(title) && title[i+1] == ' ')
 }
 
-func matchesAnyFold(str, s1, s2 string) bool {
-	if s1 != "" && hasPrefixFold(str, s1) {
+func matchesAnyFold(str, artist, album string) bool {
+	if album != "" && strings.EqualFold(str, album) {
 		return true
 	}
 
-	if s2 != "" && hasPrefixFold(str, s2) {
-		return true
-	}
-
-	return false
-}
-
-func hasPrefixFold(str, prefix string) bool {
-	if len(prefix) > len(str) {
+	if artist == "" {
 		return false
 	}
 
-	return strings.EqualFold(str[:len(prefix)], prefix)
+	if strings.EqualFold(str, artist) {
+		return true
+	}
+
+	var start int
+
+	for i := 0; i < len(str); {
+		isSep := false
+		sepLen := 1
+
+		if str[i] == '&' || str[i] == ',' {
+			isSep = true
+		} else if str[i] == ' ' && i+5 <= len(str) && strings.EqualFold(str[i:i+5], " and ") {
+			isSep = true
+			sepLen = 5
+		}
+
+		if isSep {
+			part := strings.TrimSpace(str[start:i])
+			if part != "" && strings.EqualFold(part, artist) {
+				return true
+			}
+
+			start = i + sepLen
+			i = start
+		} else {
+			i++
+		}
+	}
+
+	if start < len(str) {
+		part := strings.TrimSpace(str[start:])
+		if part != "" && strings.EqualFold(part, artist) {
+			return true
+		}
+	}
+
+	return false
 }
