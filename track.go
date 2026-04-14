@@ -136,7 +136,8 @@ func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) 
 	return nil, fmt.Errorf("no sound entry found in hydration data")
 }
 
-// cleanupTrackTitle cleanly removes the artist and album name from the title (e.g. "CapoBlanco - Album - Love In The Rain")
+// cleanupTrackTitle cleanly removes the artist and album name from the title
+// while respecting hyphenated titles (e.g. "Artist - Album - Example-Title")
 func cleanupTrackTitle(title, artist, album string) string {
 	if artist == "" && album == "" {
 		return title
@@ -145,17 +146,28 @@ func cleanupTrackTitle(title, artist, album string) string {
 	var (
 		start    int
 		segments []string
+		removed  bool
 	)
 
 	for i := range len(title) + 1 {
-		if i == len(title) || title[i] == '-' {
+		if i == len(title) || isTrackTitleSeparator(title, i) {
 			trimmed := strings.TrimSpace(title[start:i])
-			if trimmed != "" && !matchesAnyFold(trimmed, artist, album) {
-				segments = append(segments, trimmed)
+			if trimmed != "" {
+				if matchesAnyFold(trimmed, artist, album) {
+					removed = true
+				} else {
+					segments = append(segments, trimmed)
+				}
+			} else {
+				removed = true
 			}
 
 			start = i + 1
 		}
+	}
+
+	if !removed {
+		return title
 	}
 
 	if len(segments) == 0 {
@@ -163,6 +175,14 @@ func cleanupTrackTitle(title, artist, album string) string {
 	}
 
 	return strings.Join(segments, " - ")
+}
+
+func isTrackTitleSeparator(title string, i int) bool {
+	if title[i] != '-' {
+		return false
+	}
+
+	return (i > 0 && title[i-1] == ' ') || (i+1 < len(title) && title[i+1] == ' ')
 }
 
 func matchesAnyFold(str, s1, s2 string) bool {
