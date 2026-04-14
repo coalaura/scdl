@@ -5,16 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
+	"time"
 )
 
 // Track holds metadata for a SoundCloud track.
 type Track struct {
 	ID                 int
 	Title              string
+	Album              string
 	Artist             string
 	ArtworkURL         string
+	ArtistAvatarURL    string
 	Genre              string
 	Description        string
+	Year               string
 	Duration           int // milliseconds
 	TrackAuthorization string
 	HLSURL             string // HLS transcoding URL for audio/mpeg
@@ -49,15 +54,23 @@ func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) 
 		}
 
 		var data struct {
-			ID                 int    `json:"id"`
-			Title              string `json:"title"`
-			Description        string `json:"description"`
-			Genre              string `json:"genre"`
-			Duration           int    `json:"duration"`
-			ArtworkURL         string `json:"artwork_url"`
-			TrackAuthorization string `json:"track_authorization"`
-			User               struct {
-				Username string `json:"username"`
+			ID                 int       `json:"id"`
+			Title              string    `json:"title"`
+			CreatedAt          time.Time `json:"created_at"`
+			ReleaseDate        time.Time `json:"release_date"`
+			Description        string    `json:"description"`
+			Genre              string    `json:"genre"`
+			Duration           int       `json:"duration"`
+			ArtworkURL         string    `json:"artwork_url"`
+			TrackAuthorization string    `json:"track_authorization"`
+			PublisherMetadata  struct {
+				Artist       string `json:"artist"`
+				AlbumTitle   string `json:"album_title"`
+				ReleaseTitle string `json:"release_title"`
+			} `json:"publisher_metadata"`
+			User struct {
+				AvatarURL string `json:"avatar_url"`
+				Username  string `json:"username"`
 			} `json:"user"`
 			Media struct {
 				Transcodings []struct {
@@ -73,13 +86,35 @@ func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) 
 			return nil, fmt.Errorf("parse track data: %w", err)
 		}
 
+		artist := data.User.Username
+		if data.PublisherMetadata.Artist != "" {
+			artist = data.PublisherMetadata.Artist
+		}
+
+		title := data.Title
+		if data.PublisherMetadata.ReleaseTitle != "" {
+			title = data.PublisherMetadata.ReleaseTitle
+		} else {
+			title = cleanupTrackTitle(title, artist)
+		}
+
+		var year string
+		if !data.ReleaseDate.IsZero() {
+			year = data.ReleaseDate.Format("2006")
+		} else if !data.CreatedAt.IsZero() {
+			year = data.CreatedAt.Format("2006")
+		}
+
 		track := &Track{
 			ID:                 data.ID,
-			Title:              data.Title,
-			Artist:             data.User.Username,
+			Title:              title,
+			Album:              data.PublisherMetadata.AlbumTitle,
+			Artist:             artist,
 			ArtworkURL:         data.ArtworkURL,
+			ArtistAvatarURL:    data.User.AvatarURL,
 			Genre:              data.Genre,
 			Description:        data.Description,
+			Year:               year,
 			Duration:           data.Duration,
 			TrackAuthorization: data.TrackAuthorization,
 		}
@@ -99,4 +134,15 @@ func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) 
 	}
 
 	return nil, fmt.Errorf("no sound entry found in hydration data")
+}
+
+// cleanupTrackTitle removes the artist name from the title (e.g. "CapoBlanco - Love In The Rain")
+func cleanupTrackTitle(title, artist string) string {
+	if strings.HasPrefix(title, artist) {
+		rgx := regexp.MustCompile(regexp.QuoteMeta(artist) + "\\s*-\\s*")
+
+		return rgx.ReplaceAllString(title, "")
+	}
+
+	return title
 }

@@ -245,6 +245,14 @@ func (c *Client) embedMetadata(ctx context.Context, filePath string, track *Trac
 	tag.SetArtist(track.Artist)
 	tag.SetGenre(track.Genre)
 
+	if track.Album != "" {
+		tag.SetAlbum(track.Album)
+	}
+
+	if track.Year != "" {
+		tag.SetYear(track.Year)
+	}
+
 	if track.Description != "" {
 		tag.AddCommentFrame(id3v2.CommentFrame{
 			Encoding:    id3v2.EncodingUTF8,
@@ -268,6 +276,25 @@ func (c *Client) embedMetadata(ctx context.Context, filePath string, track *Trac
 				MimeType:    "image/jpeg",
 				PictureType: id3v2.PTFrontCover,
 				Description: "Front cover",
+				Picture:     image,
+			})
+		}
+	}
+
+	if track.ArtistAvatarURL != "" {
+		artistURL := strings.Replace(track.ArtistAvatarURL, "-large.", "-t500x500.", 1)
+		image, err := c.get(ctx, artistURL)
+		if (err != nil || len(image) == 0) && artistURL != track.ArtistAvatarURL {
+			// Fallback to original URL if high-res fails and we changed it
+			image, err = c.get(ctx, track.ArtistAvatarURL)
+		}
+
+		if err == nil && len(image) > 0 {
+			tag.AddAttachedPicture(id3v2.PictureFrame{
+				Encoding:    id3v2.EncodingUTF8,
+				MimeType:    "image/jpeg",
+				PictureType: id3v2.PTArtistPerformer,
+				Description: "Artist",
 				Picture:     image,
 			})
 		}
