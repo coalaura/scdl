@@ -2,6 +2,7 @@ package scdl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -257,4 +258,89 @@ func TestCleanupTrackTitle(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNullableTime(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantZero  bool
+		wantYear  int
+		wantError bool
+	}{
+		{
+			name:     "null JSON value",
+			input:    `null`,
+			wantZero: true,
+		},
+		{
+			name:     "empty string",
+			input:    `""`,
+			wantZero: true,
+		},
+		{
+			name:     "valid RFC3339 timestamp",
+			input:    `"2023-06-15T12:00:00Z"`,
+			wantZero: false,
+			wantYear: 2023,
+		},
+		{
+			name:      "invalid value",
+			input:     `"not-a-date"`,
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var nt nullableTime
+			err := json.Unmarshal([]byte(tt.input), &nt)
+			if tt.wantError {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantZero && !nt.IsZero() {
+				t.Errorf("expected zero time, got %v", nt.Time)
+			}
+			if !tt.wantZero && nt.Year() != tt.wantYear {
+				t.Errorf("expected year %d, got %d", tt.wantYear, nt.Year())
+			}
+		})
+	}
+
+	t.Run("unmarshals correctly inside struct", func(t *testing.T) {
+		var data struct {
+			CreatedAt   nullableTime `json:"created_at"`
+			ReleaseDate nullableTime `json:"release_date"`
+		}
+		err := json.Unmarshal([]byte(`{"created_at":"2021-03-01T00:00:00Z","release_date":null}`), &data)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if data.CreatedAt.Year() != 2021 {
+			t.Errorf("expected 2021, got %d", data.CreatedAt.Year())
+		}
+		if !data.ReleaseDate.IsZero() {
+			t.Errorf("expected zero time for null release_date, got %v", data.ReleaseDate.Time)
+		}
+	})
+
+	t.Run("empty string in struct does not error", func(t *testing.T) {
+		var data struct {
+			ReleaseDate nullableTime `json:"release_date"`
+		}
+		err := json.Unmarshal([]byte(`{"release_date":""}`), &data)
+		if err != nil {
+			t.Fatalf("empty string should not cause unmarshal error, got: %v", err)
+		}
+		if !data.ReleaseDate.IsZero() {
+			t.Errorf("expected zero time for empty string, got %v", data.ReleaseDate.Time)
+		}
+	})
+
 }
