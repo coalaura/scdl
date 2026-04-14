@@ -95,7 +95,7 @@ func (c *Client) GetTrack(ctx context.Context, trackURL string) (*Track, error) 
 		if data.PublisherMetadata.ReleaseTitle != "" {
 			title = data.PublisherMetadata.ReleaseTitle
 		} else {
-			title = cleanupTrackTitle(title, data.PublisherMetadata.AlbumTitle, artist)
+			title = cleanupTrackTitle(title, artist, data.PublisherMetadata.AlbumTitle)
 		}
 
 		var year string
